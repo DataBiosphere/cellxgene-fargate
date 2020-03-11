@@ -1,2 +1,1 @@
-cellxgene
-
+cellxgene==${CELLXGENE_VERSION}

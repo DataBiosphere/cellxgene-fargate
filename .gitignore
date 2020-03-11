@@ -1,5 +1,5 @@
-.venv/
-.terraform/
+/.venv/
+/.terraform/
 __pycache__/
-terraform/azul-gitlab.tf.json.template.py
-terraform/*.tf.json
+/terraform/*.tf.json
+/environment.local
