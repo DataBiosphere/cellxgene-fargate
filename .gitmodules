@@ -1,0 +1,3 @@
+[submodule "submodules/azul"]
+	path = submodules/azul
+	url = git@github.com:DataBiosphere/azul.git
