@@ -2,6 +2,7 @@ import json
 import os
 
 from azul.deployment import (
+    aws,
     emit_tf,
 )
 
@@ -188,11 +189,24 @@ emit_tf({
                             ],
                             "portMappings": [
                                 {"containerPort": int_port, "hostPort": int_port}
-                            ]
+                            ],
+                            "logConfiguration": {
+                                "logDriver": "awslogs",
+                                "options": {
+                                    "awslogs-group": "${aws_cloudwatch_log_group.cellxgene.name}",
+                                    "awslogs-region": aws.region_name,
+                                    "awslogs-stream-prefix": "cellxgene"
+                                }
+                            }
                         }
                     ]
                 ),
                 "execution_role_arn": "arn:aws:iam::122796619775:role/ecsTaskExecutionRole"
+            }
+        },
+        "aws_cloudwatch_log_group": {
+            "cellxgene": {
+                "name": "/aws/fargate/cellxgene"
             }
         },
         "aws_lb": {
