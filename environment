@@ -3,8 +3,8 @@ export CELLXGENE_IMAGE=gi.ucsc.edu/cellxgene
 export CELLXGENE_VERSION=0.14.1
 export PYTHONPATH="${cxgf_home}/src"
 export AWS_DEFAULT_REGION=us-east-1
-
-CXG_DATA_URL='https://cellxgene-example-data.czi.technology/pbmc3k.h5ad'
+export TF_DATA_DIR="${cxgf_home}/terraform/.terraform"
+export AZUL_VERSIONED_BUCKET="edu-ucsc-gi-singlecell-azul-config-dev"
 
 # Get temporary credentials from STS via AssumeRole and inject them
 # into the current environment where other AWS client libraries can
@@ -47,7 +47,7 @@ _preauth () {
 # A little helper to make re-sourcing this script easier.
 #
 _refresh () {
-    source ${azul_home}/environment
+    source ${cxgf_home}/environment
 }
 
 if test -f environment.local; then source environment.local; fi

@@ -2,4 +2,5 @@
 /.terraform/
 __pycache__/
 /terraform/*.tf.json
+/terraform/.terraform/
 /environment.local

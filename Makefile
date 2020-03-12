@@ -1,3 +1,5 @@
+include common.mk
+
 all: check_environment
 	@echo "Looking good!"
 
@@ -41,6 +43,9 @@ docker_push: check
 	export remote_image=`aws ecr describe-repositories --repository-names $(image) --output text --query repositories[0].repositoryUri` \
 		&& docker tag $(image):$(tag) $$remote_image:$(tag) \
 		&& docker push $$remote_image:$(tag)
+
+terraform: check
+	$(MAKE) -C terraform
 
 .PHONY: all check_venv check_environment check \
 		venv requirements requirements.dev \

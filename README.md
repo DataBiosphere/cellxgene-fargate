@@ -54,3 +54,11 @@ Host CZI's [cellxgene](https://chanzuckerberg.github.io/cellxgene/) on AWS Farga
     make docker_login
     make docker_push
     ```
+ 
+ 8) Provision the AWS resources needed to run `cellxgene` as a Fargate container 
+    in Amazon ECS behind an EC2 application load balancer:
+    
+    ```
+    _preauth  # if you're assuming an IAM role that requires MFA
+    make terraform 
+    ```

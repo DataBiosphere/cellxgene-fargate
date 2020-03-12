@@ -1,13 +1,15 @@
 import json
+import os
 
-from cellxgene.deployment import (
+from azul.deployment import (
     emit_tf,
 )
 
 num_zones = 2  # An ALB needs at least two availability zones
 
-# List of port forwardings by the network load balancer (NLB). The first element in the tuple is the port on the
-# external interface of the NLB, the second element is the port on the instance the the NLB forwards to.
+# List of port forwardings by the network load balancer (NLB). The first element
+# in the tuple is the port on the external interface of the NLB, the second
+# element is the port on the instance the the NLB forwards to.
 #
 ext_port = 80
 int_port = 5005
@@ -20,8 +22,9 @@ def subnet_name(public: bool):
 
 
 def subnet_number(zone: int, public: bool):
-    # Even numbers for private subnets, odd numbers for public subnets. The advantage of this numbering scheme is
-    # that it won't be perturbed by adding zones.
+    # Even numbers for private subnets, odd numbers for public subnets. The
+    # advantage of this numbering scheme is that it won't be perturbed by adding
+    # zones.
     return 2 * zone + int(public)
 
 
@@ -39,15 +42,21 @@ ingress_egress_block = {
 
 # noinspection PyInterpreter
 emit_tf({
-    "provider": {
-        "aws": {
-            "region": "us-east-1"
-        }
-    },
     "data": {
         "aws_availability_zones": {
             "available": {}
         },
+        "aws_ecr_repository": {
+            "cellxgene": {
+                "name": os.environ['CELLXGENE_IMAGE']
+            }
+        },
+        "aws_ecr_image": {
+            "cellxgene": {
+                "repository_name": "${data.aws_ecr_repository.cellxgene.name}",
+                "image_tag": os.environ['CELLXGENE_VERSION']
+            }
+        }
     },
     "resource": {
         "aws_vpc": {
@@ -67,7 +76,7 @@ emit_tf({
                 "tags": {
                     "Name": f"cellxgene-{subnet_name(public)}-{subnet_number(zone, public)}"
                 }
-            } for public in (False, True) for zone in range(num_zones)
+            } for public in (True,) for zone in range(num_zones)
         },
         "aws_internet_gateway": {
             "cellxgene": {
@@ -83,33 +92,6 @@ emit_tf({
                 "gateway_id": "${aws_internet_gateway.cellxgene.id}",
                 "route_table_id": "${aws_vpc.cellxgene.main_route_table_id}"
             }
-        },
-        "aws_route_table": {
-            "cellxgene": {
-                "vpc_id": "${aws_vpc.cellxgene.id}",
-                "route": [
-                    {
-                        "cidr_block": "0.0.0.0/0",
-                        "egress_only_gateway_id": None,
-                        "gateway_id": None,
-                        "nat_gateway_id": None,
-                        "instance_id": None,
-                        "ipv6_cidr_block": None,
-                        "network_interface_id": None,
-                        "transit_gateway_id": None,
-                        "vpc_peering_connection_id": None
-                    }
-                ],
-                "tags": {
-                    "Name": "cellxgene"
-                }
-            }
-        },
-        "aws_route_table_association": {
-            f"cellxgene_{zone}": {
-                "route_table_id": f"${{aws_route_table.cellxgene.id}}",
-                "subnet_id": f"${{aws_subnet.cellxgene_private_{zone}.id}}"
-            } for zone in range(num_zones)
         },
         "aws_security_group": {
             "cellxgene": {
@@ -141,9 +123,7 @@ emit_tf({
                     },
                     {
                         **ingress_egress_block,
-                        "security_groups": [
-                            "${aws_security_group.cellxgene.id}"
-                        ],
+                        "self": True,
                         "protocol": "-1",
                         "from_port": 0,
                         "to_port": 0
@@ -155,8 +135,7 @@ emit_tf({
             "cellxgene": {
                 "name": "cellxgene",
                 "capacity_providers": [
-                    "FARGATE",
-                    "FARGATE_SPOT"
+                    "FARGATE"
                 ]
             }
         },
@@ -169,28 +148,51 @@ emit_tf({
                 "launch_type": "FARGATE",
                 "load_balancer": {
                     "target_group_arn": "${aws_lb_target_group.cellxgene.arn}",
-                    "container_name": "cellxgene-container",
-                    "container_port": 5005,
+                    "container_name": "cellxgene",
+                    "container_port": int_port,
+                },
+                "network_configuration": {
+                    "subnets": [
+                        f"${{aws_subnet.cellxgene_public_{zone}.id}}"
+                        for zone in range(num_zones)
+                    ],
+                    "security_groups": [
+                        "${aws_security_group.cellxgene.id}"
+                    ],
+                    "assign_public_ip": True
                 }
             }
         },
         "aws_ecs_task_definition": {
             "cellxgene": {
                 "family": "cellxgene",
+                "requires_compatibilities": [
+                    "FARGATE"
+                ],
+                "network_mode": "awsvpc",
+                "cpu": 1024,  # 1 vCPU (https://docs.aws.amazon.com/AmazonECS/latest/userguide/fargate-task-defs.html)
+                "memory": 2048,
                 "container_definitions": json.dumps(
                     [
                         {
-                            "name": "cellxgene-container",
-                            "image": "122796619775.dkr.ecr.us-east-1.amazonaws.com/cellxgene-fargate:latest",
-                            "cpu": 1,
-                            "memory": 2048,
+                            "name": "cellxgene",
+                            "image": "${data.aws_ecr_repository.cellxgene.repository_url}"
+                                     "@${data.aws_ecr_image.cellxgene.image_digest}",
                             "essential": True,
+                            "command": [
+                                "launch",
+                                "--verbose",
+                                "https://cellxgene-example-data.czi.technology/pbmc3k.h5ad",
+                                "--host=0.0.0.0",
+                                f"--port={int_port}"
+                            ],
                             "portMappings": [
-                                {"containerPort": 5005, "hostPort": 5005}
+                                {"containerPort": int_port, "hostPort": int_port}
                             ]
                         }
                     ]
-                )
+                ),
+                "execution_role_arn": "arn:aws:iam::122796619775:role/ecsTaskExecutionRole"
             }
         },
         "aws_lb": {
@@ -214,7 +216,7 @@ emit_tf({
                 "protocol": "HTTP",
                 "default_action": [
                     {
-                        "target_group_arn": "${aws_lb_target_group.cellxgene.id}",
+                        "target_group_arn": "${aws_lb_target_group.cellxgene.arn}",
                         "type": "forward"
                     }
                 ],
@@ -225,32 +227,17 @@ emit_tf({
             "cellxgene": {
                 "name": "cellxgene",
                 "port": int_port,
-                "protocol": "TCP",
+                "protocol": "HTTP",
                 "target_type": "ip",
                 "stickiness": {
+                    # Stickyness is irrelevant when there is only one target but
+                    # should be reconsidered when we load balance over multiple
+                    # containers.
+                    "enabled": False,
                     "type": "lb_cookie",
-                    "enabled": False
                 },
                 "vpc_id": "${aws_vpc.cellxgene.id}"
             }
-        },
-        "aws_lb_target_group_attachment": {
-            "cellxgene": {
-                "target_group_arn": "${aws_lb_target_group.cellxgene.arn}",
-                "target_id": "${aws_ecs_task_definition.cellxgene}",
-                "port": 5005
-            }
-        },
-        "aws_network_interface": {
-            "cellxgene": {
-                "subnet_id": "${aws_subnet.cellxgene_private_0.id}",
-                "security_groups": [
-                    "${aws_security_group.cellxgene.id}"
-                ],
-                "tags": {
-                    "Name": "cellxgene"
-                }
-            }
-        },
+        }
     }
 })
