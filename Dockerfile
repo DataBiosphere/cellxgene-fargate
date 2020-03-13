@@ -7,13 +7,14 @@ WORKDIR /build
 
 COPY requirements.txt .
 COPY environment .
+COPY common.mk .
 COPY Makefile .
 
 RUN source environment \
     && make virtualenv \
     && source .venv/bin/activate \
     && make requirements \
-    && rm environment requirements.txt Makefile
+    && rm environment requirements.txt common.mk Makefile
 
 ENV VIRTUAL_ENV /build/.venv
 ENV PATH $VIRTUAL_ENV/bin:$PATH
