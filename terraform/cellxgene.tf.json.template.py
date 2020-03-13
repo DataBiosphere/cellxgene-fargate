@@ -76,7 +76,7 @@ emit_tf({
                 "tags": {
                     "Name": f"cellxgene-{subnet_name(public)}-{subnet_number(zone, public)}"
                 }
-            } for public in (True,) for zone in range(num_zones)
+            } for public in (False, True) for zone in range(num_zones)
         },
         "aws_internet_gateway": {
             "cellxgene": {
@@ -93,9 +93,56 @@ emit_tf({
                 "route_table_id": "${aws_vpc.cellxgene.main_route_table_id}"
             }
         },
+        "aws_eip": {
+            f"cellxgene_{zone}": {
+                "depends_on": [
+                    "aws_internet_gateway.cellxgene"
+                ],
+                "vpc": True,
+                "tags": {
+                    "Name": f"cellxgene-{zone}"
+                }
+            } for zone in range(num_zones)
+        },
+        "aws_nat_gateway": {
+            f"cellxgene_{zone}": {
+                "allocation_id": f"${{aws_eip.cellxgene_{zone}.id}}",
+                "subnet_id": f"${{aws_subnet.cellxgene_public_{zone}.id}}",
+                "tags": {
+                    "Name": f"cellxgene-{zone}"
+                }
+            } for zone in range(num_zones)
+        },
+        "aws_route_table": {
+            f"cellxgene_{zone}": {
+                "route": [
+                    {
+                        "cidr_block": "0.0.0.0/0",
+                        "nat_gateway_id": f"${{aws_nat_gateway.cellxgene_{zone}.id}}",
+                        "egress_only_gateway_id": None,
+                        "gateway_id": None,
+                        "instance_id": None,
+                        "ipv6_cidr_block": None,
+                        "network_interface_id": None,
+                        "transit_gateway_id": None,
+                        "vpc_peering_connection_id": None
+                    }
+                ],
+                "vpc_id": "${aws_vpc.cellxgene.id}",
+                "tags": {
+                    "Name": f"cellxgene-{zone}"
+                }
+            } for zone in range(num_zones)
+        },
+        "aws_route_table_association": {
+            f"cellxgene_{zone}": {
+                "route_table_id": f"${{aws_route_table.cellxgene_{zone}.id}}",
+                "subnet_id": f"${{aws_subnet.cellxgene_private_{zone}.id}}"
+            } for zone in range(num_zones)
+        },
         "aws_security_group": {
-            "cellxgene": {
-                "name": "cellxgene",
+            "cellxgene_alb": {
+                "name": "cellxgene-alb",
                 "vpc_id": "${aws_vpc.cellxgene.id}",
                 "egress": [
                     {
@@ -111,22 +158,32 @@ emit_tf({
                         **ingress_egress_block,
                         "cidr_blocks": ["0.0.0.0/0"],
                         "protocol": "tcp",
-                        "from_port": 80,
-                        "to_port": 80
-                    },
+                        "from_port": ext_port,
+                        "to_port": ext_port
+                    }
+                ]
+            },
+            "cellxgene": {
+                "name": "cellxgene",
+                "vpc_id": "${aws_vpc.cellxgene.id}",
+                "egress": [
                     {
                         **ingress_egress_block,
-                        "ipv6_cidr_blocks": ["::/0"],
-                        "protocol": "tcp",
-                        "from_port": 80,
-                        "to_port": 80
-                    },
-                    {
-                        **ingress_egress_block,
-                        "self": True,
-                        "protocol": "-1",
+                        "cidr_blocks": ["0.0.0.0/0"],
+                        "protocol": -1,
                         "from_port": 0,
                         "to_port": 0
+                    }
+                ],
+                "ingress": [
+                    {
+                        **ingress_egress_block,
+                        "from_port": int_port,
+                        "protocol": "tcp",
+                        "security_groups": [
+                            "${aws_security_group.cellxgene_alb.id}"
+                        ],
+                        "to_port": int_port,
                     }
                 ]
             }
@@ -139,7 +196,7 @@ emit_tf({
                     f"${{aws_subnet.cellxgene_public_{zone}.id}}" for zone in range(num_zones)
                 ],
                 "security_groups": [
-                    "${aws_security_group.cellxgene.id}"
+                    "${aws_security_group.cellxgene_alb.id}"
                 ],
                 "tags": {
                     "Name": "cellxgene"
@@ -197,13 +254,12 @@ emit_tf({
                 },
                 "network_configuration": {
                     "subnets": [
-                        f"${{aws_subnet.cellxgene_public_{zone}.id}}"
+                        f"${{aws_subnet.cellxgene_private_{zone}.id}}"
                         for zone in range(num_zones)
                     ],
                     "security_groups": [
                         "${aws_security_group.cellxgene.id}"
-                    ],
-                    "assign_public_ip": True
+                    ]
                 }
             }
         },
