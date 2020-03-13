@@ -17,18 +17,6 @@ int_port = 5005
 
 vpc_cidr = "172.111.0.0/16"
 
-
-def subnet_name(public: bool):
-    return 'public' if public else 'private'
-
-
-def subnet_number(zone: int, public: bool):
-    # Even numbers for private subnets, odd numbers for public subnets. The
-    # advantage of this numbering scheme is that it won't be perturbed by adding
-    # zones.
-    return 2 * zone + int(public)
-
-
 ingress_egress_block = {
     "cidr_blocks": None,
     "ipv6_cidr_blocks": None,
@@ -41,7 +29,18 @@ ingress_egress_block = {
     "description": None,
 }
 
-# noinspection PyInterpreter
+
+def subnet_name(public: bool):
+    return 'public' if public else 'private'
+
+
+def subnet_number(zone: int, public: bool):
+    # Even numbers for private subnets, odd numbers for public subnets. The
+    # advantage of this numbering scheme is that it won't be perturbed by adding
+    # zones.
+    return 2 * zone + int(public)
+
+
 emit_tf({
     "data": {
         "aws_availability_zones": {
@@ -132,6 +131,50 @@ emit_tf({
                 ]
             }
         },
+        "aws_lb": {
+            "cellxgene": {
+                "name": "cellxgene",
+                "load_balancer_type": "application",
+                "subnets": [
+                    f"${{aws_subnet.cellxgene_public_{zone}.id}}" for zone in range(num_zones)
+                ],
+                "security_groups": [
+                    "${aws_security_group.cellxgene.id}"
+                ],
+                "tags": {
+                    "Name": "cellxgene"
+                }
+            }
+        },
+        "aws_lb_listener": {
+            "cellxgene": {
+                "port": ext_port,
+                "protocol": "HTTP",
+                "default_action": [
+                    {
+                        "target_group_arn": "${aws_lb_target_group.cellxgene.arn}",
+                        "type": "forward"
+                    }
+                ],
+                "load_balancer_arn": "${aws_lb.cellxgene.id}"
+            }
+        },
+        "aws_lb_target_group": {
+            "cellxgene": {
+                "name": "cellxgene",
+                "port": int_port,
+                "protocol": "HTTP",
+                "target_type": "ip",
+                "stickiness": {
+                    # Stickyness is irrelevant when there is only one target but
+                    # should be reconsidered when we load balance over multiple
+                    # containers.
+                    "enabled": False,
+                    "type": "lb_cookie",
+                },
+                "vpc_id": "${aws_vpc.cellxgene.id}"
+            }
+        },
         "aws_ecs_cluster": {
             "cellxgene": {
                 "name": "cellxgene",
@@ -209,49 +252,5 @@ emit_tf({
                 "name": "/aws/fargate/cellxgene"
             }
         },
-        "aws_lb": {
-            "cellxgene": {
-                "name": "cellxgene",
-                "load_balancer_type": "application",
-                "subnets": [
-                    f"${{aws_subnet.cellxgene_public_{zone}.id}}" for zone in range(num_zones)
-                ],
-                "security_groups": [
-                    "${aws_security_group.cellxgene.id}"
-                ],
-                "tags": {
-                    "Name": "cellxgene"
-                }
-            }
-        },
-        "aws_lb_listener": {
-            "cellxgene": {
-                "port": ext_port,
-                "protocol": "HTTP",
-                "default_action": [
-                    {
-                        "target_group_arn": "${aws_lb_target_group.cellxgene.arn}",
-                        "type": "forward"
-                    }
-                ],
-                "load_balancer_arn": "${aws_lb.cellxgene.id}"
-            }
-        },
-        "aws_lb_target_group": {
-            "cellxgene": {
-                "name": "cellxgene",
-                "port": int_port,
-                "protocol": "HTTP",
-                "target_type": "ip",
-                "stickiness": {
-                    # Stickyness is irrelevant when there is only one target but
-                    # should be reconsidered when we load balance over multiple
-                    # containers.
-                    "enabled": False,
-                    "type": "lb_cookie",
-                },
-                "vpc_id": "${aws_vpc.cellxgene.id}"
-            }
-        }
     }
 })
