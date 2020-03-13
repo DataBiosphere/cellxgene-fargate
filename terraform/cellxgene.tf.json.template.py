@@ -45,6 +45,11 @@ def subnet_number(zone: int, public: bool):
     return 2 * zone + int(public)
 
 
+matrix_urls = {
+    "example1": "https://cellxgene-example-data.czi.technology/pbmc3k.h5ad",
+    "example2": "https://data.humancellatlas.org/release-files/releases/2020-mar/2020-Mar-Atlas-Adult-Retina-10x_annotated_v1.seurat.h5ad"
+}
+
 emit_tf({
     "data": {
         "aws_availability_zones": {
@@ -217,30 +222,65 @@ emit_tf({
             "cellxgene": {
                 "port": ext_port,
                 "protocol": "HTTP",
-                "default_action": [
-                    {
-                        "target_group_arn": "${aws_lb_target_group.cellxgene.arn}",
-                        "type": "forward"
+                "default_action": {
+                    "type": "fixed-response",
+                    "fixed_response": {
+                        "content_type": "text/html",
+                        "message_body": """
+                            <html>
+                            <head></head>
+                            <body><ul>
+                            """ + '\n'.join(
+                            f'<li><a href="http://{subdomain}.cellxgene.{domain_name}/">{subdomain}</a></li>'
+                            for subdomain, matrix_url in matrix_urls.items()) + """
+                            </ul></body>
+                            </html>
+                        """,
+                        "status_code": "200"
                     }
-                ],
+                },
                 "load_balancer_arn": "${aws_lb.cellxgene.id}"
             }
         },
+        "aws_lb_listener_rule": {
+            **dict_merge(
+                {
+                    f"cellxgene_{subdomain}": {
+                        "listener_arn": "${aws_lb_listener.cellxgene.arn}",
+                        "action": {
+                            "type": "forward",
+                            "target_group_arn": f"${{aws_lb_target_group.cellxgene_{subdomain}.arn}}"
+                        },
+                        "condition": {
+                            "host_header": {
+                                "values": [
+                                    f"{subdomain}.cellxgene.{domain_name}"
+                                ]
+                            }
+                        }
+                    }
+                } for subdomain in matrix_urls.keys()
+            )
+        },
         "aws_lb_target_group": {
-            "cellxgene": {
-                "name": "cellxgene",
-                "port": int_port,
-                "protocol": "HTTP",
-                "target_type": "ip",
-                "stickiness": {
-                    # Stickyness is irrelevant when there is only one target but
-                    # should be reconsidered when we load balance over multiple
-                    # containers.
-                    "enabled": False,
-                    "type": "lb_cookie",
-                },
-                "vpc_id": "${aws_vpc.cellxgene.id}"
-            }
+            **dict_merge(
+                {
+                    f"cellxgene_{subdomain}": {
+                        "name": f"cellxgene-{subdomain}",
+                        "port": int_port,
+                        "protocol": "HTTP",
+                        "target_type": "ip",
+                        "stickiness": {
+                            # Stickyness is irrelevant when there is only one target but
+                            # should be reconsidered when we load balance over multiple
+                            # containers.
+                            "enabled": False,
+                            "type": "lb_cookie",
+                        },
+                        "vpc_id": "${aws_vpc.cellxgene.id}"
+                    }
+                } for subdomain in matrix_urls.keys()
+            )
         },
         "aws_ecs_cluster": {
             "cellxgene": {
@@ -251,27 +291,31 @@ emit_tf({
             }
         },
         "aws_ecs_service": {
-            "cellxgene": {
-                "name": "cellxgene",
-                "cluster": "${aws_ecs_cluster.cellxgene.id}",
-                "task_definition": "${aws_ecs_task_definition.cellxgene.arn}",
-                "desired_count": 1,
-                "launch_type": "FARGATE",
-                "load_balancer": {
-                    "target_group_arn": "${aws_lb_target_group.cellxgene.arn}",
-                    "container_name": "cellxgene",
-                    "container_port": int_port,
-                },
-                "network_configuration": {
-                    "subnets": [
-                        f"${{aws_subnet.cellxgene_private_{zone}.id}}"
-                        for zone in range(num_zones)
-                    ],
-                    "security_groups": [
-                        "${aws_security_group.cellxgene.id}"
-                    ]
-                }
-            }
+            **dict_merge(
+                {
+                    f"cellxgene_{subdomain}": {
+                        "name": f"cellxgene-{subdomain}",
+                        "cluster": "${aws_ecs_cluster.cellxgene.id}",
+                        "task_definition": f"${{aws_ecs_task_definition.cellxgene_{subdomain}.arn}}",
+                        "desired_count": 1,
+                        "launch_type": "FARGATE",
+                        "load_balancer": {
+                            "target_group_arn": f"${{aws_lb_target_group.cellxgene_{subdomain}.arn}}",
+                            "container_name": "cellxgene",
+                            "container_port": int_port,
+                        },
+                        "network_configuration": {
+                            "subnets": [
+                                f"${{aws_subnet.cellxgene_private_{zone}.id}}"
+                                for zone in range(num_zones)
+                            ],
+                            "security_groups": [
+                                "${aws_security_group.cellxgene.id}"
+                            ]
+                        }
+                    }
+                } for subdomain in matrix_urls.keys()
+            )
         },
         "aws_route53_record": {
             **dict_merge(
@@ -286,47 +330,53 @@ emit_tf({
                             "evaluate_target_health": False
                         }
                     }
-                } for i, subdomain in enumerate(['example'])),
+                } for subdomain in [None, *matrix_urls.keys()]
+            )
         },
         "aws_ecs_task_definition": {
-            "cellxgene": {
-                "family": "cellxgene",
-                "requires_compatibilities": [
-                    "FARGATE"
-                ],
-                "network_mode": "awsvpc",
-                "cpu": 1024,  # 1 vCPU (https://docs.aws.amazon.com/AmazonECS/latest/userguide/fargate-task-defs.html)
-                "memory": 2048,
-                "container_definitions": json.dumps(
-                    [
-                        {
-                            "name": "cellxgene",
-                            "image": "${data.aws_ecr_repository.cellxgene.repository_url}"
-                                     "@${data.aws_ecr_image.cellxgene.image_digest}",
-                            "essential": True,
-                            "command": [
-                                "launch",
-                                "--verbose",
-                                "https://cellxgene-example-data.czi.technology/pbmc3k.h5ad",
-                                "--host=0.0.0.0",
-                                f"--port={int_port}"
-                            ],
-                            "portMappings": [
-                                {"containerPort": int_port, "hostPort": int_port}
-                            ],
-                            "logConfiguration": {
-                                "logDriver": "awslogs",
-                                "options": {
-                                    "awslogs-group": "${aws_cloudwatch_log_group.cellxgene.name}",
-                                    "awslogs-region": aws.region_name,
-                                    "awslogs-stream-prefix": "cellxgene"
+            **dict_merge(
+                {
+                    f"cellxgene_{subdomain}": {
+                        "family": f"cellxgene_{subdomain}",
+                        "requires_compatibilities": [
+                            "FARGATE"
+                        ],
+                        "network_mode": "awsvpc",
+                        "cpu": 1024,
+                        # 1 vCPU (https://docs.aws.amazon.com/AmazonECS/latest/userguide/fargate-task-defs.html)
+                        "memory": 2048,
+                        "container_definitions": json.dumps(
+                            [
+                                {
+                                    "name": "cellxgene",
+                                    "image": "${data.aws_ecr_repository.cellxgene.repository_url}"
+                                             "@${data.aws_ecr_image.cellxgene.image_digest}",
+                                    "essential": True,
+                                    "command": [
+                                        "launch",
+                                        "--verbose",
+                                        matrix_url,
+                                        "--host=0.0.0.0",
+                                        f"--port={int_port}"
+                                    ],
+                                    "portMappings": [
+                                        {"containerPort": int_port, "hostPort": int_port}
+                                    ],
+                                    "logConfiguration": {
+                                        "logDriver": "awslogs",
+                                        "options": {
+                                            "awslogs-group": "${aws_cloudwatch_log_group.cellxgene.name}",
+                                            "awslogs-region": aws.region_name,
+                                            "awslogs-stream-prefix": "cellxgene"
+                                        }
+                                    }
                                 }
-                            }
-                        }
-                    ]
-                ),
-                "execution_role_arn": "arn:aws:iam::122796619775:role/ecsTaskExecutionRole"
-            }
+                            ]
+                        ),
+                        "execution_role_arn": "arn:aws:iam::122796619775:role/ecsTaskExecutionRole"
+                    }
+                } for subdomain, matrix_url in matrix_urls.items()
+            )
         },
         "aws_cloudwatch_log_group": {
             "cellxgene": {
