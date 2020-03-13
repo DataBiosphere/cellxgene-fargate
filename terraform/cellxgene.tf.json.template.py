@@ -1,10 +1,12 @@
 import json
 import os
 
+from azul.collections import dict_merge
 from azul.deployment import (
     aws,
     emit_tf,
 )
+from azul.strings import departition
 
 num_zones = 2  # An ALB needs at least two availability zones
 
@@ -16,6 +18,8 @@ ext_port = 80
 int_port = 5005
 
 vpc_cidr = "172.111.0.0/16"
+
+domain_name = 'singlecell.gi.ucsc.edu'
 
 ingress_egress_block = {
     "cidr_blocks": None,
@@ -55,6 +59,12 @@ emit_tf({
             "cellxgene": {
                 "repository_name": "${data.aws_ecr_repository.cellxgene.name}",
                 "image_tag": os.environ['CELLXGENE_VERSION']
+            }
+        },
+        "aws_route53_zone": {
+            "cellxgene": {
+                "name": domain_name + ".",
+                "private_zone": False
             }
         }
     },
@@ -262,6 +272,21 @@ emit_tf({
                     ]
                 }
             }
+        },
+        "aws_route53_record": {
+            **dict_merge(
+                {
+                    departition('cellxgene', '_', subdomain): {
+                        "zone_id": "${data.aws_route53_zone.cellxgene.id}",
+                        "name": departition(subdomain, '.', f"cellxgene.{domain_name}"),
+                        "type": "A",
+                        "alias": {
+                            "name": "${aws_lb.cellxgene.dns_name}",
+                            "zone_id": "${aws_lb.cellxgene.zone_id}",
+                            "evaluate_target_health": False
+                        }
+                    }
+                } for i, subdomain in enumerate(['example'])),
         },
         "aws_ecs_task_definition": {
             "cellxgene": {
