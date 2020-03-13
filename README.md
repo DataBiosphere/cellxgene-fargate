@@ -5,9 +5,9 @@ Host CZI's [cellxgene](https://chanzuckerberg.github.io/cellxgene/) on AWS Farga
 
  1) Clone the repository and its submodules:
 
-   ```
-   git clone --recurse-submodules git@github.com:DataBiosphere/cellxgene-fargate.git
-   ```
+    ```
+    git clone --recurse-submodules git@github.com:DataBiosphere/cellxgene-fargate.git
+    ```
 
  2) Create `environment.local` with any local settings you might need, like 
     `AWS_PROFILE`. Then run
