@@ -59,6 +59,6 @@ Host CZI's [cellxgene](https://chanzuckerberg.github.io/cellxgene/) on AWS Farga
     in Amazon ECS behind an EC2 application load balancer:
     
     ```
-    _preauth  # if you're assuming an IAM role that requires MFA
+    _preauth  # if you're assuming an IAM role requiring MFA
     make terraform 
     ```

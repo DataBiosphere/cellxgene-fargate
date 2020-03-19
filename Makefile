@@ -4,19 +4,19 @@ all: check_environment
 	@echo "Looking good!"
 
 check_environment:
-	@if test -z "$$cxgf_home"; then echo "\nRun 'source environment' first\n"; false; fi
+	@if test -z "$$project_root"; then echo -e "\nError: Run 'source environment' first\n"; false; fi
 
 check_venv:
-	@if test -z "$$VIRTUAL_ENV"; then echo "\nRun 'source .venv/bin/activate' first\n"; false; fi
+	@if test -z "$$VIRTUAL_ENV"; then echo -e "\nError: Run 'source .venv/bin/activate' first\n"; false; fi
 
 check: check_environment check_venv
 
 virtualenv:
-	@if test -s "$$VIRTUAL_ENV"; then echo "\nRun 'deactivate' first\n"; false; fi
+	@if test -s "$$VIRTUAL_ENV"; then echo -e "\nRun 'deactivate' first\n"; false; fi
 	if test -e .venv; then rm -rf .venv/; fi
 	python3.6 -m venv .venv
 	.venv/bin/pip install -U pip==10.0.1 setuptools==40.1.0 wheel==0.32.3
-	@echo "\nRun 'source .venv/bin/activate' now!\n"
+	@echo -e "\nRun 'source .venv/bin/activate' now!\n"
 
 requirements: check
 	.venv/bin/pip install -Ur requirements.txt
@@ -31,7 +31,7 @@ docker_repository: check
 	aws ecr create-repository --repository-name $(image)
 
 docker_image: check
-	docker build -t $(image):$(tag) .
+	docker build -t $(image):$(tag) --build-arg CELLXGENE_VERSION=$(CELLXGENE_VERSION) .
 
 docker_run: check
 	docker run $(image):$(tag)

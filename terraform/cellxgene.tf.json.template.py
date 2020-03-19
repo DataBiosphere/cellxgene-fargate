@@ -19,7 +19,8 @@ int_port = 5005
 
 vpc_cidr = "172.111.0.0/16"
 
-domain_name = 'singlecell.gi.ucsc.edu'
+zone_name = os.environ['CELLXGENE_ZONE_NAME']
+domain_name = os.environ['CELLXGENE_DOMAIN_NAME']
 
 ingress_egress_block = {
     "cidr_blocks": None,
@@ -68,8 +69,13 @@ emit_tf({
         },
         "aws_route53_zone": {
             "cellxgene": {
-                "name": domain_name + ".",
+                "name": zone_name + ".",
                 "private_zone": False
+            }
+        },
+        "aws_iam_role": {
+            "cellxgene": {
+                "name": "ecsTaskExecutionRole"
             }
         }
     },
@@ -231,7 +237,7 @@ emit_tf({
                             <head></head>
                             <body><ul>
                             """ + '\n'.join(
-                            f'<li><a href="http://{subdomain}.cellxgene.{domain_name}/">{subdomain}</a></li>'
+                            f'<li><a href="http://{subdomain}.{domain_name}/">{subdomain}</a></li>'
                             for subdomain, matrix_url in matrix_urls.items()) + """
                             </ul></body>
                             </html>
@@ -254,7 +260,7 @@ emit_tf({
                         "condition": {
                             "host_header": {
                                 "values": [
-                                    f"{subdomain}.cellxgene.{domain_name}"
+                                    f"{subdomain}.{domain_name}"
                                 ]
                             }
                         }
@@ -322,7 +328,7 @@ emit_tf({
                 {
                     departition('cellxgene', '_', subdomain): {
                         "zone_id": "${data.aws_route53_zone.cellxgene.id}",
-                        "name": departition(subdomain, '.', f"cellxgene.{domain_name}"),
+                        "name": departition(subdomain, '.', domain_name),
                         "type": "A",
                         "alias": {
                             "name": "${aws_lb.cellxgene.dns_name}",
@@ -373,7 +379,7 @@ emit_tf({
                                 }
                             ]
                         ),
-                        "execution_role_arn": "arn:aws:iam::122796619775:role/ecsTaskExecutionRole"
+                        "execution_role_arn": "${data.aws_iam_role.cellxgene.arn}"
                     }
                 } for subdomain, matrix_url in matrix_urls.items()
             )
