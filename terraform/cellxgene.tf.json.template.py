@@ -1,12 +1,16 @@
 import json
 import os
+import re
 
-from azul.collections import dict_merge
+import boto3
+from typing import (
+    NamedTuple,
+)
+
 from azul.deployment import (
     aws,
     emit_tf,
 )
-from azul.strings import departition
 
 num_zones = 2  # An ALB needs at least two availability zones
 
@@ -46,10 +50,38 @@ def subnet_number(zone: int, public: bool):
     return 2 * zone + int(public)
 
 
-matrix_urls = {
-    "example1": "https://cellxgene-example-data.czi.technology/pbmc3k.h5ad",
-    "example2": "https://data.humancellatlas.org/release-files/releases/2020-mar/2020-Mar-Atlas-Adult-Retina-10x_annotated_v1.seurat.h5ad"
-}
+class MatrixFile(NamedTuple):
+    key: str
+    public_url: str
+    subdomain: str
+    tfid: str
+
+    @staticmethod
+    def for_key(key):
+        prefix, _, filename = key.rpartition('/')
+        study_name, _, suffix = filename.partition('_')
+        # https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/DomainNameFormat.html
+        # has nothing against - and _ at the beginning/end or repeating them but
+        # we'll enforce those things anyways.
+        assert re.fullmatch(r'[a-z0-9]+([-_][a-z0-9]+)*', study_name, re.I), study_name
+        assert len(study_name) < 64
+        return MatrixFile(key=key,
+                          public_url='https://data.humancellatlas.org/' + key,
+                          subdomain=study_name.lower(),
+                          tfid='cellxgene_' + study_name.replace('-', '_').lower())
+
+
+def matrix_files():
+    bucket = boto3.resource('s3').Bucket('release-files.data.humancellatlas.org')
+    for obj in bucket.objects.filter(Prefix='release-files/releases/2020-mar/'):
+        if obj.key.endswith('.h5ad'):
+            yield MatrixFile.for_key(obj.key)
+
+
+matrix_files = list(matrix_files())
+
+assert len(set(m.subdomain for m in matrix_files)) == len(matrix_files)
+assert len(set(m.tfid for m in matrix_files)) == len(matrix_files)
 
 emit_tf({
     "data": {
@@ -237,8 +269,8 @@ emit_tf({
                             <head></head>
                             <body><ul>
                             """ + '\n'.join(
-                            f'<li><a href="http://{subdomain}.{domain_name}/">{subdomain}</a></li>'
-                            for subdomain, matrix_url in matrix_urls.items()) + """
+                            f'<li><a href="http://{m.subdomain}.{domain_name}/">{m.public_url}</a></li>'
+                            for m in matrix_files) + """
                             </ul></body>
                             </html>
                         """,
@@ -249,44 +281,39 @@ emit_tf({
             }
         },
         "aws_lb_listener_rule": {
-            **dict_merge(
-                {
-                    f"cellxgene_{subdomain}": {
-                        "listener_arn": "${aws_lb_listener.cellxgene.arn}",
-                        "action": {
-                            "type": "forward",
-                            "target_group_arn": f"${{aws_lb_target_group.cellxgene_{subdomain}.arn}}"
-                        },
-                        "condition": {
-                            "host_header": {
-                                "values": [
-                                    f"{subdomain}.{domain_name}"
-                                ]
-                            }
-                        }
+            m.tfid: {
+                "listener_arn": "${aws_lb_listener.cellxgene.arn}",
+                "action": {
+                    "type": "forward",
+                    "target_group_arn": f"${{aws_lb_target_group.{m.tfid}.arn}}"
+                },
+                "condition": {
+                    "host_header": {
+                        "values": [
+                            f"{m.subdomain}.{domain_name}"
+                        ]
                     }
-                } for subdomain in matrix_urls.keys()
-            )
+                },
+                "depends_on": [f"aws_lb_target_group.{m.tfid}"]
+            } for m in matrix_files
         },
         "aws_lb_target_group": {
-            **dict_merge(
-                {
-                    f"cellxgene_{subdomain}": {
-                        "name": f"cellxgene-{subdomain}",
-                        "port": int_port,
-                        "protocol": "HTTP",
-                        "target_type": "ip",
-                        "stickiness": {
-                            # Stickyness is irrelevant when there is only one target but
-                            # should be reconsidered when we load balance over multiple
-                            # containers.
-                            "enabled": False,
-                            "type": "lb_cookie",
-                        },
-                        "vpc_id": "${aws_vpc.cellxgene.id}"
-                    }
-                } for subdomain in matrix_urls.keys()
-            )
+            m.tfid: {
+                "port": int_port,
+                "protocol": "HTTP",
+                "target_type": "ip",
+                "stickiness": {
+                    # Stickyness is irrelevant when there is only one target but
+                    # should be reconsidered when we load balance over multiple
+                    # containers.
+                    "enabled": False,
+                    "type": "lb_cookie",
+                },
+                "vpc_id": "${aws_vpc.cellxgene.id}",
+                "tags": {
+                    "Name": m.subdomain
+                }
+            } for m in matrix_files
         },
         "aws_ecs_cluster": {
             "cellxgene": {
@@ -297,92 +324,80 @@ emit_tf({
             }
         },
         "aws_ecs_service": {
-            **dict_merge(
-                {
-                    f"cellxgene_{subdomain}": {
-                        "name": f"cellxgene-{subdomain}",
-                        "cluster": "${aws_ecs_cluster.cellxgene.id}",
-                        "task_definition": f"${{aws_ecs_task_definition.cellxgene_{subdomain}.arn}}",
-                        "desired_count": 1,
-                        "launch_type": "FARGATE",
-                        "load_balancer": {
-                            "target_group_arn": f"${{aws_lb_target_group.cellxgene_{subdomain}.arn}}",
-                            "container_name": "cellxgene",
-                            "container_port": int_port,
-                        },
-                        "network_configuration": {
-                            "subnets": [
-                                f"${{aws_subnet.cellxgene_private_{zone}.id}}"
-                                for zone in range(num_zones)
-                            ],
-                            "security_groups": [
-                                "${aws_security_group.cellxgene.id}"
-                            ]
-                        }
-                    }
-                } for subdomain in matrix_urls.keys()
-            )
+            m.tfid: {
+                "name": f"cellxgene-{m.subdomain}",
+                "cluster": "${aws_ecs_cluster.cellxgene.id}",
+                "task_definition": f"${{aws_ecs_task_definition.{m.tfid}.arn}}",
+                "desired_count": 1,
+                "launch_type": "FARGATE",
+                "load_balancer": {
+                    "target_group_arn": f"${{aws_lb_target_group.{m.tfid}.arn}}",
+                    "container_name": "cellxgene",
+                    "container_port": int_port,
+                },
+                "network_configuration": {
+                    "subnets": [
+                        f"${{aws_subnet.cellxgene_private_{zone}.id}}"
+                        for zone in range(num_zones)
+                    ],
+                    "security_groups": [
+                        "${aws_security_group.cellxgene.id}"
+                    ]
+                }
+            } for m in matrix_files
         },
         "aws_route53_record": {
-            **dict_merge(
-                {
-                    departition('cellxgene', '_', subdomain): {
-                        "zone_id": "${data.aws_route53_zone.cellxgene.id}",
-                        "name": departition(subdomain, '.', domain_name),
-                        "type": "A",
-                        "alias": {
-                            "name": "${aws_lb.cellxgene.dns_name}",
-                            "zone_id": "${aws_lb.cellxgene.zone_id}",
-                            "evaluate_target_health": False
-                        }
-                    }
-                } for subdomain in [None, *matrix_urls.keys()]
-            )
+            'cellxgene' if m is None else m.tfid: {
+                "zone_id": "${data.aws_route53_zone.cellxgene.id}",
+                "name": 'cellxgene' if m is None else m.subdomain + '.' + domain_name,
+                "type": "A",
+                "alias": {
+                    "name": "${aws_lb.cellxgene.dns_name}",
+                    "zone_id": "${aws_lb.cellxgene.zone_id}",
+                    "evaluate_target_health": False
+                }
+            } for m in [None, *matrix_files]
         },
         "aws_ecs_task_definition": {
-            **dict_merge(
-                {
-                    f"cellxgene_{subdomain}": {
-                        "family": f"cellxgene_{subdomain}",
-                        "requires_compatibilities": [
-                            "FARGATE"
-                        ],
-                        "network_mode": "awsvpc",
-                        "cpu": 1024,
-                        # 1 vCPU (https://docs.aws.amazon.com/AmazonECS/latest/userguide/fargate-task-defs.html)
-                        "memory": 2048,
-                        "container_definitions": json.dumps(
-                            [
-                                {
-                                    "name": "cellxgene",
-                                    "image": "${data.aws_ecr_repository.cellxgene.repository_url}"
-                                             "@${data.aws_ecr_image.cellxgene.image_digest}",
-                                    "essential": True,
-                                    "command": [
-                                        "launch",
-                                        "--verbose",
-                                        matrix_url,
-                                        "--host=0.0.0.0",
-                                        f"--port={int_port}"
-                                    ],
-                                    "portMappings": [
-                                        {"containerPort": int_port, "hostPort": int_port}
-                                    ],
-                                    "logConfiguration": {
-                                        "logDriver": "awslogs",
-                                        "options": {
-                                            "awslogs-group": "${aws_cloudwatch_log_group.cellxgene.name}",
-                                            "awslogs-region": aws.region_name,
-                                            "awslogs-stream-prefix": "cellxgene"
-                                        }
-                                    }
+            m.tfid: {
+                "family": m.tfid,
+                "requires_compatibilities": [
+                    "FARGATE"
+                ],
+                "network_mode": "awsvpc",
+                "cpu": 1024,
+                # 1 vCPU (https://docs.aws.amazon.com/AmazonECS/latest/userguide/fargate-task-defs.html)
+                "memory": 2048,
+                "container_definitions": json.dumps(
+                    [
+                        {
+                            "name": "cellxgene",
+                            "image": "${data.aws_ecr_repository.cellxgene.repository_url}"
+                                     "@${data.aws_ecr_image.cellxgene.image_digest}",
+                            "essential": True,
+                            "command": [
+                                "launch",
+                                "--verbose",
+                                m.public_url,
+                                "--host=0.0.0.0",
+                                f"--port={int_port}"
+                            ],
+                            "portMappings": [
+                                {"containerPort": int_port, "hostPort": int_port}
+                            ],
+                            "logConfiguration": {
+                                "logDriver": "awslogs",
+                                "options": {
+                                    "awslogs-group": "${aws_cloudwatch_log_group.cellxgene.name}",
+                                    "awslogs-region": aws.region_name,
+                                    "awslogs-stream-prefix": "cellxgene"
                                 }
-                            ]
-                        ),
-                        "execution_role_arn": "${data.aws_iam_role.cellxgene.arn}"
-                    }
-                } for subdomain, matrix_url in matrix_urls.items()
-            )
+                            }
+                        }
+                    ]
+                ),
+                "execution_role_arn": "${data.aws_iam_role.cellxgene.arn}"
+            } for m in matrix_files
         },
         "aws_cloudwatch_log_group": {
             "cellxgene": {
