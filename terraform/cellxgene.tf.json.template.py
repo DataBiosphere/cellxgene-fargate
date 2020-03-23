@@ -52,12 +52,14 @@ def subnet_number(zone: int, public: bool):
 
 class MatrixFile(NamedTuple):
     key: str
+    size: int
+    study_name: str
     public_url: str
     subdomain: str
     tfid: str
 
     @staticmethod
-    def for_key(key):
+    def for_key(key: str, size: int) -> 'MatrixFile':
         prefix, _, filename = key.rpartition('/')
         study_name, _, suffix = filename.partition('_')
         # https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/DomainNameFormat.html
@@ -66,16 +68,22 @@ class MatrixFile(NamedTuple):
         assert re.fullmatch(r'[a-z0-9]+([-_][a-z0-9]+)*', study_name, re.I), study_name
         assert len(study_name) < 64
         return MatrixFile(key=key,
+                          size=size,
+                          study_name=study_name,
                           public_url='https://data.humancellatlas.org/' + key,
                           subdomain=study_name.lower(),
                           tfid='cellxgene_' + study_name.replace('-', '_').lower())
+
+    @property
+    def estimated_memory_requirement_in_mib(self):
+        return 2048 if self.size < 10 ** 9 else 4 * 1024
 
 
 def matrix_files():
     bucket = boto3.resource('s3').Bucket('release-files.data.humancellatlas.org')
     for obj in bucket.objects.filter(Prefix='release-files/releases/2020-mar/'):
         if obj.key.endswith('.h5ad'):
-            yield MatrixFile.for_key(obj.key)
+            yield MatrixFile.for_key(obj.key, obj.size)
 
 
 matrix_files = list(matrix_files())
@@ -367,7 +375,7 @@ emit_tf({
                 "network_mode": "awsvpc",
                 "cpu": 1024,
                 # 1 vCPU (https://docs.aws.amazon.com/AmazonECS/latest/userguide/fargate-task-defs.html)
-                "memory": 2048,
+                "memory": m.estimated_memory_requirement_in_mib,
                 "container_definitions": json.dumps(
                     [
                         {
