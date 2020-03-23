@@ -269,7 +269,7 @@ emit_tf({
                             <head></head>
                             <body><ul>
                             """ + '\n'.join(
-                            f'<li><a href="http://{m.subdomain}.{domain_name}/">{m.public_url}</a></li>'
+                            f'<li><a href="http://{m.subdomain}.{domain_name}/">{m.study_name}</a></li>'
                             for m in matrix_files) + """
                             </ul></body>
                             </html>
