@@ -319,6 +319,8 @@ emit_tf({
                 },
                 "vpc_id": "${aws_vpc.cellxgene.id}",
                 "tags": {
+                    # Work around TF bug with eplicit name. This will make TF chose a name for us:
+                    # https://github.com/terraform-providers/terraform-provider-aws/issues/636#issuecomment-397459646
                     "Name": m.subdomain
                 }
             } for m in matrix_files
