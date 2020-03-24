@@ -21,6 +21,7 @@ Host CZI's [cellxgene](https://chanzuckerberg.github.io/cellxgene/) on AWS Farga
     ```   
     make virtualenv
     source .venv/bin/activate
+    make envhook  # optional but recommended when using PyCharm
     make requirements.dev
     ```
 

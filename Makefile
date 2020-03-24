@@ -18,6 +18,9 @@ virtualenv:
 	.venv/bin/pip install -U pip==10.0.1 setuptools==40.1.0 wheel==0.32.3
 	@echo -e "\nRun 'source .venv/bin/activate' now!\n"
 
+envhook: check_venv
+	python scripts/envhook.py install
+
 requirements: check
 	.venv/bin/pip install -Ur requirements.txt
 
@@ -48,5 +51,5 @@ terraform: check
 	$(MAKE) -C terraform
 
 .PHONY: all check_venv check_environment check \
-		venv requirements requirements.dev \
+		venv envhook requirements requirements.dev \
 		docker_repository docker_image docker_login docker_push
