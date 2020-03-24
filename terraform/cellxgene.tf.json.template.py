@@ -398,7 +398,7 @@ emit_tf({
                                 "options": {
                                     "awslogs-group": "${aws_cloudwatch_log_group.cellxgene.name}",
                                     "awslogs-region": aws.region_name,
-                                    "awslogs-stream-prefix": "cellxgene"
+                                    "awslogs-stream-prefix": m.subdomain
                                 }
                             }
                         }
