@@ -2,10 +2,9 @@ import json
 import os
 import re
 
+from boltons.cacheutils import cachedproperty
 import boto3
-from typing import (
-    NamedTuple,
-)
+from dataclasses import dataclass
 
 from azul.deployment import (
     aws,
@@ -47,10 +46,37 @@ def subnet_number(zone: int, public: bool):
     # Even numbers for private subnets, odd numbers for public subnets. The
     # advantage of this numbering scheme is that it won't be perturbed by adding
     # zones.
+    # noinspection PyTypeChecker
     return 2 * zone + int(public)
 
 
-class MatrixFile(NamedTuple):
+# https://aws.amazon.com/fargate/pricing/
+#
+fargate_vcpu_to_memory_in_MiB = {
+    256: [512, 1024, 2048],
+    512: [i * 1024 for i in range(1, 5)],
+    1024: [i * 1024 for i in range(2, 9)],
+    2048: [i * 1024 for i in range(4, 17)],
+    4096: [i * 1024 for i in range(8, 31)]
+}
+
+
+@dataclass(frozen=True)
+class FargateSpec:
+    vcpu: int
+    memory_in_MiB: int
+
+    # noinspection PyPep8Naming
+    @classmethod
+    def for_required_memory(cls, memory_in_MiB: int) -> 'FargateSpec':
+        for vcpu, mems in sorted(fargate_vcpu_to_memory_in_MiB.items()):
+            for mem in sorted(mems):
+                if mem >= memory_in_MiB:
+                    return cls(vcpu=vcpu, memory_in_MiB=mem)
+
+
+@dataclass(frozen=True)
+class MatrixFile:
     key: str
     size: int
     study_name: str
@@ -59,8 +85,8 @@ class MatrixFile(NamedTuple):
     tfid: str
     slug_prefix = '2020-mar-'
 
-    @staticmethod
-    def for_key(key: str, size: int) -> 'MatrixFile':
+    @classmethod
+    def for_key(cls, key: str, size: int) -> 'MatrixFile':
         prefix, _, filename = key.rpartition('/')
         study_name, _, suffix = filename.partition('_')
         # https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/DomainNameFormat.html
@@ -68,21 +94,26 @@ class MatrixFile(NamedTuple):
         # we'll enforce those things anyways.
         assert re.fullmatch(r'[a-z0-9]+([-_][a-z0-9]+)*', study_name, re.I), study_name
         assert len(study_name) < 64
-        return MatrixFile(key=key,
-                          size=size,
-                          study_name=study_name,
-                          public_url='https://data.humancellatlas.org/' + key,
-                          subdomain=study_name.lower(),
-                          tfid='cellxgene_' + study_name.replace('-', '_').lower())
+        return cls(key=key,
+                   size=size,
+                   study_name=study_name,
+                   public_url='https://data.humancellatlas.org/' + key,
+                   subdomain=study_name.lower(),
+                   tfid='cellxgene_' + study_name.replace('-', '_').lower())
 
     @property
     def slug(self):
         assert self.subdomain.startswith(self.slug_prefix)
         return self.subdomain[len(self.slug_prefix):]
 
+    # noinspection PyPep8Naming
     @property
-    def estimated_memory_requirement_in_mib(self):
-        return 2048 if self.size < 10 ** 9 else 4 * 1024
+    def required_memory_in_MiB(self) -> int:
+        return self.size * 3 >> 20
+
+    @cachedproperty
+    def fargate_specs(self) -> FargateSpec:
+        return FargateSpec.for_required_memory(self.required_memory_in_MiB)
 
 
 def matrix_files():
@@ -391,9 +422,8 @@ emit_tf({
                     "FARGATE"
                 ],
                 "network_mode": "awsvpc",
-                "cpu": 1024,
-                # 1 vCPU (https://docs.aws.amazon.com/AmazonECS/latest/userguide/fargate-task-defs.html)
-                "memory": m.estimated_memory_requirement_in_mib,
+                "cpu": m.fargate_specs.vcpu,
+                "memory": m.fargate_specs.memory_in_MiB,
                 "container_definitions": json.dumps(
                     [
                         {
