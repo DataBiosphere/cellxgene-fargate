@@ -317,6 +317,17 @@ emit_tf({
                     "enabled": False,
                     "type": "lb_cookie",
                 },
+                "health_check": {
+                    "protocol": "HTTP",
+                    "path": "/",
+                    "port": "traffic-port",
+                    "healthy_threshold": 2,
+                    # This and `interval` give the containers for the large files enough time to initialize
+                    "unhealthy_threshold": 10,
+                    "timeout": 30,
+                    "interval": 60,
+                    "matcher": "200"
+                },
                 "vpc_id": "${aws_vpc.cellxgene.id}",
                 "tags": {
                     # Work around TF bug with eplicit name. This will make TF chose a name for us:
