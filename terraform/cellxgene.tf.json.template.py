@@ -57,6 +57,7 @@ class MatrixFile(NamedTuple):
     public_url: str
     subdomain: str
     tfid: str
+    slug_prefix = '2020-mar-'
 
     @staticmethod
     def for_key(key: str, size: int) -> 'MatrixFile':
@@ -73,6 +74,11 @@ class MatrixFile(NamedTuple):
                           public_url='https://data.humancellatlas.org/' + key,
                           subdomain=study_name.lower(),
                           tfid='cellxgene_' + study_name.replace('-', '_').lower())
+
+    @property
+    def slug(self):
+        assert self.subdomain.startswith(self.slug_prefix)
+        return self.subdomain[len(self.slug_prefix):]
 
     @property
     def estimated_memory_requirement_in_mib(self):
@@ -272,16 +278,15 @@ emit_tf({
                     "type": "fixed-response",
                     "fixed_response": {
                         "content_type": "text/html",
-                        "message_body": """
-                            <html>
-                            <head></head>
-                            <body><ul>
-                            """ + '\n'.join(
-                            f'<li><a href="http://{m.subdomain}.{domain_name}/">{m.study_name}</a></li>'
-                            for m in matrix_files) + """
-                            </ul></body>
-                            </html>
-                        """,
+                        # This has to be <= 1024 bytes, hence the JavaScript approach
+                        "message_body":
+                            f"<html><body><script>"
+                            f"var l={[m.slug for m in matrix_files]};"
+                            f"for(i=0;i<l.length;i++)"
+                            f"document.write("
+                            f"'<p><a href=\"http://{MatrixFile.slug_prefix}'+l[i]+'.{domain_name}\">'+l[i]+'</a></p>'"
+                            f");"
+                            f"</script></body></html>",
                         "status_code": "200"
                     }
                 },
