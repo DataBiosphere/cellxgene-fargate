@@ -399,6 +399,7 @@ emit_tf({
                             "command": [
                                 "launch",
                                 "--verbose",
+                                "--backed",
                                 m.public_url,
                                 "--host=0.0.0.0",
                                 f"--port={int_port}"
