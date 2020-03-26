@@ -9,14 +9,25 @@ Host CZI's [cellxgene](https://chanzuckerberg.github.io/cellxgene/) on AWS Farga
     git clone --recurse-submodules git@github.com:DataBiosphere/cellxgene-fargate.git
     ```
 
- 2) Create `environment.local` with any local settings you might need, like 
-    `AWS_PROFILE`. Then run
+ 2) Create the `.active` symlink to the active deployment, for example
+ 
+    ```
+    (cd deployments && ln -snf sc/dev .active)
+    ```
+ 
+ 3) Create `deployments/.active/environment.local.py` with any local settings 
+    you might need, like `AWS_DEFAULT_PROFILE`. The format of that file is 
+    exactly the same as that of `environment.py`. Then run
 
     ```
     source environment
-    ``` 
+    ```
+    
+    Once you've sourced the environment, you can use the `_select` shell 
+    function to activate a different deployment, and `_refresh` to source the 
+    environment again after changes to any of the `environment*.py` files. 
 
- 3) Create and populate a virtualenv with
+ 4) Create and populate a virtualenv with
 
     ```   
     make virtualenv
@@ -28,13 +39,13 @@ Host CZI's [cellxgene](https://chanzuckerberg.github.io/cellxgene/) on AWS Farga
     The project is configured and all development dependencies have been 
     installed.
 
- 4) To create a Docker image with `cellxgene` inside run
+ 5) To create a Docker image with `cellxgene` inside run
 
     ```
     make docker_image
     ```
 
- 5) Test the image with 
+ 6) Test the image with 
 
     ```
     make docker_run
@@ -42,21 +53,21 @@ Host CZI's [cellxgene](https://chanzuckerberg.github.io/cellxgene/) on AWS Farga
     
     The `cellxgene` help text should be printed.
     
- 6) Once per AWS account and region, an Amazon ECR image repository needs to 
+ 7) Once per AWS account and region, an Amazon ECR image repository needs to 
     be created:
     
     ```
     make docker_repository
     ```    
  
- 7) Push the `cellxgene` Docker image to Amazon ECR with
+ 8) Push the `cellxgene` Docker image to Amazon ECR with
 
     ```
     make docker_login
     make docker_push
     ```
  
- 8) Provision the AWS resources needed to run `cellxgene` as a Fargate container 
+ 9) Provision the AWS resources needed to run `cellxgene` as a Fargate container 
     in Amazon ECS behind an EC2 application load balancer:
     
     ```
