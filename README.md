@@ -49,9 +49,11 @@ Host CZI's [cellxgene](https://chanzuckerberg.github.io/cellxgene/) on AWS Farga
 
     ```
     make docker_run
+    echo $CELLXGENE_VERSION
     ```
     
-    The `cellxgene` help text should be printed.
+    The `cellxgene` version printed by the container should match the value of
+    the environment variable.
     
  7) Once per AWS account and region, an Amazon ECR image repository needs to 
     be created:

@@ -37,7 +37,7 @@ docker_image: check
 	docker build -t $(image):$(tag) --build-arg CELLXGENE_VERSION=$(CELLXGENE_VERSION) .
 
 docker_run: check
-	docker run $(image):$(tag)
+	docker run $(image):$(tag) --version
 
 docker_login: check
 	python scripts/docker_login.py
