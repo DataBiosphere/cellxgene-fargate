@@ -435,6 +435,8 @@ emit_tf({
                                 "launch",
                                 "--verbose",
                                 "--backed",
+                                "--disable-annotations",
+                                "--title=" + m.study_name,
                                 m.public_url,
                                 "--host=0.0.0.0",
                                 f"--port={int_port}"

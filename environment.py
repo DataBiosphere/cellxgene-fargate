@@ -24,7 +24,7 @@ def env() -> Mapping[str, Optional[str]]:
         'CELLXGENE_ZONE_NAME': None,
         'CELLXGENE_DOMAIN_NAME': 'cellxgene.{CELLXGENE_ZONE_NAME}',
         'CELLXGENE_IMAGE': 'gi.ucsc.edu/cellxgene',
-        'CELLXGENE_VERSION': '0.14.1',
+        'CELLXGENE_VERSION': '0.15.0',
         'PYTHONPATH': '{project_root}/src',
         'TF_DATA_DIR': '{project_root}/deployments/.active/.terraform.{AWS_PROFILE}',
     }
