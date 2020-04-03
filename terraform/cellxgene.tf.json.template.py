@@ -149,14 +149,33 @@ emit_tf({
                 "name": zone_name + ".",
                 "private_zone": False
             }
-        },
-        "aws_iam_role": {
-            "cellxgene": {
-                "name": "ecsTaskExecutionRole"
-            }
         }
     },
     "resource": {
+        "aws_iam_role": {
+            "cellxgene": {
+                "name": "cellxgene",
+                "assume_role_policy": json.dumps({
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Action": "sts:AssumeRole",
+                            "Principal": {
+                                "Service": "ec2.amazonaws.com"
+                            },
+                            "Effect": "Allow",
+                            "Sid": ""
+                        }
+                    ]
+                })
+            }
+        },
+        "aws_iam_role_policy_attachment": {
+            "ecs-task-execution-role-policy": {
+                "role": "${aws_iam_role.cellxgene.name}",
+                "policy_arn": "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+            }
+        },
         "aws_vpc": {
             "cellxgene": {
                 "cidr_block": vpc_cidr,
@@ -455,7 +474,7 @@ emit_tf({
                         }
                     ]
                 ),
-                "execution_role_arn": "${data.aws_iam_role.cellxgene.arn}"
+                "execution_role_arn": "${aws_iam_role.cellxgene.arn}"
             } for m in matrix_files
         },
         "aws_cloudwatch_log_group": {
