@@ -21,10 +21,34 @@ def env() -> Mapping[str, Optional[str]]:
     usually more specific environment.py files should provide the value.
     """
     return {
+        # The name of the Route 53 hosted zone in which to create the records
+        # that point to the individual Fargate containers. This zone has to
+        # exist.
+        #
         'CELLXGENE_ZONE_NAME': None,
+
+        # The parent domain of the records in the zone identified by
+        # CELLXGENE_ZONE_NAME. Each container will be assigned a subdomain of
+        # the domain given here. CELLXGENE_ZONE_NAME must be a suffix of this
+        # value. Both values may even be identical.
+        #
         'CELLXGENE_DOMAIN_NAME': 'cellxgene.{CELLXGENE_ZONE_NAME}',
+
+        # The name of the Docker image repository to which the cellxgene Docker
+        # image will be pushed.
+        #
         'CELLXGENE_IMAGE': 'gi.ucsc.edu/cellxgene',
+
+        # The version of cellxgene to install into the virtualenv and the image.
+        #
         'CELLXGENE_VERSION': '0.15.0',
+
+        # The variables below this point aren't meant to be customized. Things
+        # may break if they are changed.
+
+        # https://docs.python.org/3.6/using/cmdline.html#envvar-PYTHONPATH
         'PYTHONPATH': '{project_root}/src',
+
+        # https://www.terraform.io/docs/commands/environment-variables.html#tf_data_dir
         'TF_DATA_DIR': '{project_root}/deployments/.active/.terraform.{AWS_PROFILE}',
     }
