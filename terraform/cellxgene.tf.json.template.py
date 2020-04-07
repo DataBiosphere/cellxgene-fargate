@@ -488,6 +488,7 @@ emit_tf({
                                 "launch",
                                 "--verbose",
                                 "--backed",
+                                "--disable-diffexp",
                                 "--disable-annotations",
                                 "--title=" + m.study_name,
                                 m.public_url,
