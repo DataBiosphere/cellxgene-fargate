@@ -60,6 +60,9 @@ fargate_vcpu_to_memory_in_MiB = {
     4096: [i * 1024 for i in range(8, 31)]
 }
 
+fargate_vcpu_dollars_per_hour = 0.04048
+fargate_GB_ram_dollars_per_hour = 0.004445
+
 
 @dataclass(frozen=True)
 class FargateSpec:
@@ -73,6 +76,11 @@ class FargateSpec:
             for mem in sorted(mems):
                 if mem >= memory_in_MiB:
                     return cls(vcpu=vcpu, memory_in_MiB=mem)
+
+    @property
+    def cost_per_hour(self):
+        return (fargate_vcpu_dollars_per_hour * self.vcpu/1024,
+                fargate_GB_ram_dollars_per_hour * self.memory_in_MiB/1024)
 
 
 @dataclass(frozen=True)
@@ -109,7 +117,11 @@ class MatrixFile:
     # noinspection PyPep8Naming
     @property
     def required_memory_in_MiB(self) -> int:
-        return self.size * 3 >> 20
+        # Formula inferred from linear regression on optimized services and
+        # verified to successfully deploy for all March 2020 HCA files.
+        # Resting memory usage is typically low but but lowering the allocation
+        # causes health checks to fail.
+        return round(self.size * 2.5601e-6 - 16.5)
 
     @cachedproperty
     def fargate_specs(self) -> FargateSpec:
@@ -127,6 +139,28 @@ matrix_files = list(matrix_files())
 
 assert len(set(m.subdomain for m in matrix_files)) == len(matrix_files)
 assert len(set(m.tfid for m in matrix_files)) == len(matrix_files)
+
+
+def cost_report(matrix_files):
+    base_fmt = '{:<45} ' + '| {:<6}' * 2
+    header_fmt = base_fmt + '| {:<10}' * 3
+    row_fmt = base_fmt + '| ${:<9.4}' * 3
+    print('Cluster hourly cost breakdown:')
+    print(header_fmt.format('container', 'vCPU', 'RAM', 'vCPU cost', 'RAM cost', 'sum cost'))
+    info = [
+        (file.study_name,
+         file.fargate_specs.vcpu/1024,
+         file.fargate_specs.memory_in_MiB/1024,
+         *file.fargate_specs.cost_per_hour,
+         sum(file.fargate_specs.cost_per_hour))
+        for file in matrix_files
+    ]
+    info.append(('Total', *map(sum, list(zip(*info))[1:])))
+    for row in info:
+        print(row_fmt.format(*row))
+
+
+cost_report(matrix_files)
 
 emit_tf({
     "data": {
@@ -483,5 +517,10 @@ emit_tf({
                 "retention_in_days": 1827
             }
         },
+    },
+    "output": {
+        "total_cluster_hourly_cost": {
+            "value": f"${sum(sum(matrix_file.fargate_specs.cost_per_hour) for matrix_file in matrix_files):<0.5}"
+        }
     }
 })
