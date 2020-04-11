@@ -4,13 +4,18 @@ from azul.deployment import (
     emit_tf,
 )
 
+if config.terraform_component:
+    suffix = "-" + config.terraform_component
+else:
+    suffix = ''
+
 emit_tf(
     {
         "terraform": {
             "backend": {
                 "s3": {
                     "bucket": config.terraform_backend_bucket,
-                    "key": f"cellxgene-fargate.tfstate",
+                    "key": f"cellxgene-fargate{suffix}.tfstate",
                     "region": aws.region_name,
                     **(
                         {

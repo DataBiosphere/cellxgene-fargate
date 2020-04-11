@@ -1,7 +1,8 @@
 /.venv/
 /.terraform/
 __pycache__/
-/terraform/*.tf.json
+/terraform/**/*.tf.json
+/terraform/cloudfront/package.zip
 # Local environment configuration
 /deployments/.active
 /deployments/*/*.local/
