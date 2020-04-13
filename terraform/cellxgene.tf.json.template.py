@@ -460,7 +460,8 @@ emit_tf({
         },
         "aws_cloudwatch_log_group": {
             "cellxgene": {
-                "name": "/aws/fargate/cellxgene"
+                "name": "/aws/fargate/cellxgene",
+                "retention_in_days": 1827
             }
         },
     }
