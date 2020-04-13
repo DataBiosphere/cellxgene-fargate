@@ -1,3 +1,5 @@
+import os
+
 from typing import (
     Mapping,
     Optional,
@@ -45,6 +47,19 @@ def env() -> Mapping[str, Optional[str]]:
 
         # The variables below this point aren't meant to be customized. Things
         # may break if they are changed.
+
+        # FIXME: remove (https://github.com/DataBiosphere/azul/issues/1644)
+        # FIXME: can't use '{project_root}' due to https://github.com/DataBiosphere/azul/issues/1645
+        'azul_home': os.environ['project_root'],
+
+        # A short string (no punctuation allowed) that identifies a Terraform
+        # component i.e., a distinct set of Terraform resources to be deployed
+        # together but separately from resources in other components. They are
+        # typically defined in a subdirectory of the `terraform` directory and have
+        # their own directory under `deployments`. The main component is identified
+        # by the empty string and its resources are defined in the `terraform`
+        # directory.
+        'azul_terraform_component': '',
 
         # https://docs.python.org/3.6/using/cmdline.html#envvar-PYTHONPATH
         'PYTHONPATH': '{project_root}/src',
