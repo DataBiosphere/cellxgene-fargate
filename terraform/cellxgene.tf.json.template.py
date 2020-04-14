@@ -161,7 +161,7 @@ emit_tf({
                         {
                             "Action": "sts:AssumeRole",
                             "Principal": {
-                                "Service": "ec2.amazonaws.com"
+                                "Service": "ecs-tasks.amazonaws.com"
                             },
                             "Effect": "Allow",
                             "Sid": ""
